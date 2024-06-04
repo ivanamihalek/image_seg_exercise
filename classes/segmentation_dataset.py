@@ -11,7 +11,7 @@ from utils.utils import resize_if_needed
 
 
 class SegmentationDataset(Dataset):
-    def __init__(self, dataframe: pd.DataFrame, augmenting_tfm: Compose):
+    def __init__(self, dataframe: pd.DataFrame, augmenting_tfm: Compose | None = None):
         # aug tfm is a composition if several atomic transformations
         self.df = dataframe
         self.aug_tfm = augmenting_tfm
@@ -40,7 +40,7 @@ class SegmentationDataset(Dataset):
         if image is None:
             raise Exception(f"{image_path} resizing problem")
 
-        if self.aug_tfm:
+        if self.aug_tfm is not None:
             data = self.aug_tfm(image=image, mask=mask)
             image = data["image"]
             mask = data["mask"]

@@ -14,18 +14,27 @@ def paths_ok(paths) -> bool:
     return True
 
 
-def quick_plot(img: np.ndarray | Tensor, mask: np.ndarray | Tensor):
-    f, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
+def quick_plot(img: np.ndarray | Tensor, mask: np.ndarray | Tensor, predicted_mask:  np.ndarray | Tensor | None = None):
 
-    ax1.set_title('IMAGE')
+    no_of_subplots = 2 if predicted_mask is None else 3
+    f, ax = plt.subplots(1, no_of_subplots, figsize=(10, 5))
+
+    ax[0].set_title('IMAGE')
     if img.shape[0] == 3:
         img = img.permute(1, 2, 0).squeeze()
-    ax1.imshow(img)
+    ax[0].imshow(img)
 
-    ax2.set_title('GROUND TRUTH')
+    ax[1].set_title('GROUND TRUTH')
     if mask.shape[0] == 1:
         mask = mask.permute(1, 2, 0).squeeze()
-    ax2.imshow(mask, cmap='gray')
+    ax[1].imshow(mask, cmap='gray')
+
+    if predicted_mask is not None:
+        ax[2].set_title('PREDICTED')
+        if predicted_mask.shape[0] == 1:
+            predicted_mask = predicted_mask.permute(1, 2, 0).squeeze()
+        ax[2].imshow(predicted_mask, cmap='gray')
+
     plt.show()
 
 

@@ -10,7 +10,7 @@ import pandas as pd
 import torch
 
 from sklearn.model_selection import train_test_split
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, ConcatDataset
 from tqdm import tqdm
 
 import settings
@@ -33,17 +33,25 @@ def sanitize(df: pd.DataFrame):
     return df.drop(bad_ids) if bad_ids else df
 
 
-def get_train_augs():
+def complex_aug_tfm():
     return A.Compose(
         [
             A.Resize(settings.IMG_SIZE, settings.IMG_SIZE),
-            A.HorizontalFlip(p=0.5),
+            A.HorizontalFlip(p=1.0),
+            A.ShiftScaleRotate(p=0.5),
             A.VerticalFlip(p=0.5),
+            A.OneOf(
+                [
+                    A.CLAHE(clip_limit=2),
+                    A.RandomBrightnessContrast(),
+                ],
+                p=0.3,
+            ),
         ]
     )
 
 
-def get_valid_augs():
+def simple_aug_tfm():
     return A.Compose(
         [
             A.Resize(settings.IMG_SIZE, settings.IMG_SIZE),
@@ -108,8 +116,13 @@ def main():
     train_df, valid_df = train_test_split(df, test_size=0.2, random_state=88)
 
     # create the data set (load + augment)
-    trainset = SegmentationDataset(train_df, get_train_augs())
-    validset = SegmentationDataset(valid_df, get_valid_augs())
+    trainset = ConcatDataset(
+        [
+            SegmentationDataset(train_df, simple_aug_tfm()),
+            SegmentationDataset(train_df, complex_aug_tfm())
+        ]
+    )
+    validset = SegmentationDataset(valid_df, simple_aug_tfm())
 
     # inspect(trainset)
 
@@ -142,7 +155,7 @@ def main():
         pred_mask = torch.sigmoid(logits_mask)
         pred_mask = (pred_mask > 0.5) * 1.0
 
-        quick_plot(image, pred_mask.detach().cpu().squeeze(0))
+        quick_plot(image, mask, pred_mask.detach().cpu().squeeze(0))
 
 
 ################################
