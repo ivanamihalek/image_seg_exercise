@@ -11,11 +11,11 @@ import torch
 
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, ConcatDataset
-from tqdm import tqdm
 
 import settings
 from classes.segmentation_dataset import SegmentationDataset
 from classes.segmentation_model import SegmentationModel
+from utils.training import train_fn, eval_fn
 from utils.utils import paths_ok, shape_compatible, read_pair, quick_plot
 from random import sample
 
@@ -50,6 +50,18 @@ def complex_aug_tfm():
         ]
     )
 
+def complex_aug_tfm_2():
+    return A.Compose(
+        [
+            A.Resize(settings.IMG_SIZE, settings.IMG_SIZE),
+            A.ShiftScaleRotate(p=1.0),
+            A.Blur(blur_limit=3),
+            A.OpticalDistortion(),
+            A.GridDistortion(),
+            A.HueSaturationValue(),
+         ]
+    )
+
 
 def simple_aug_tfm():
     return A.Compose(
@@ -67,44 +79,6 @@ def inspect(trainset):
         quick_plot(img, mask)
 
 
-def train_fn(data_loader, model, optimizer):
-    model.train()
-    total_loss = 0.0
-
-    # tqdm is a progress meter
-    for images, masks in tqdm(data_loader):
-
-        images = images.to(settings.DEVICE)
-        masks = masks.to(settings.DEVICE)
-
-        optimizer.zero_grad()
-        logits, loss = model(images, masks)
-        loss.backward()
-        optimizer.step()
-
-        total_loss += loss.item()
-
-        return total_loss / len(data_loader)
-
-
-def eval_fn(data_loader, model):
-
-    model.eval()
-    total_loss = 0.0
-
-    with torch.no_grad():
-        for images, masks in tqdm(data_loader):
-
-            images = images.to(settings.DEVICE)
-            masks = masks.to(settings.DEVICE)
-
-            logits, loss = model(images, masks)
-
-            total_loss += loss.item()
-
-    return total_loss / len(data_loader)
-
-
 def main():
 
     df = pd.read_csv(settings.FILE_PATHS)
@@ -113,42 +87,50 @@ def main():
     print(f"sanitized df size:", df.size)
 
     # split the input
-    train_df, valid_df = train_test_split(df, test_size=0.2, random_state=88)
+    train_df, validation_and_testing_df = train_test_split(df, test_size=0.4, random_state=88)
+    validation_df, testing_df =  train_test_split(validation_and_testing_df, test_size=0.5, random_state=88)
 
     # create the data set (load + augment)
     trainset = ConcatDataset(
         [
             SegmentationDataset(train_df, simple_aug_tfm()),
-            SegmentationDataset(train_df, complex_aug_tfm())
+            SegmentationDataset(train_df, complex_aug_tfm()),
+            # SegmentationDataset(train_df, complex_aug_tfm_2()) # this does not improve the results
         ]
     )
-    validset = SegmentationDataset(valid_df, simple_aug_tfm())
+    validationset = SegmentationDataset(validation_df, simple_aug_tfm())
+    testset =  SegmentationDataset(testing_df, simple_aug_tfm())
 
     # inspect(trainset)
 
     # load dataset into batches
     trainloader = DataLoader(trainset, batch_size=settings.BATCH_SIZE, shuffle=True)
-    validloader = DataLoader(validset, batch_size=settings.BATCH_SIZE)
+    validationloader = DataLoader(validationset, batch_size=settings.BATCH_SIZE)
 
-    model = SegmentationModel()
+    model = SegmentationModel(encoder=settings.ENCODER, weights=settings.WEIGHTS)
     model.to(settings.DEVICE)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=settings.LR)
 
-    best_valid_loss = np.Inf
+    # training loop
+    best_validation_loss = np.Inf
     for i in range(settings.EPOCHS):
-        train_loss = train_fn(trainloader, model, optimizer)
-        valid_loss = eval_fn(validloader, model)
+        train_loss = train_fn(trainloader, model, optimizer, verbose=True)
+        validation_loss = eval_fn(validationloader, model, verbose=True)
 
-        if valid_loss < best_valid_loss:
+        if validation_loss < best_validation_loss:
             torch.save(model.state_dict(), "bestModel.pt")
             print("SAVED")
-            best_valid_loss = valid_loss
-        print(f"Epoch : {i+1} train_loss :{train_loss} valid_loss :{valid_loss}")
+            best_validation_loss = validation_loss
+        print(f"Epoch : {i+1} train_loss: {train_loss:.2f}   validation_loss: {validation_loss:.2f}")
 
+    # results
+    testloader =  DataLoader(testset, batch_size=settings.BATCH_SIZE)
+    test_loss =  eval_fn(testloader, model)
+    print(f"\n\ntest  loss: {test_loss:.2f}\n")
     model.load_state_dict(torch.load("bestModel.pt"))
-    for idx in range(len(validset)):
-        image, mask = validset[idx]
+    for idx in range(len(testset)):
+        image, mask = testset[idx]
         logits_mask = model(
             image.to(settings.DEVICE).unsqueeze(0)
         )  # (C, H, W) -> (1, C, H, W)

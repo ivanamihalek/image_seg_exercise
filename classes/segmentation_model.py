@@ -7,12 +7,12 @@ import settings
 
 class SegmentationModel(nn.Module):
 
-    def __init__(self):
+    def __init__(self, encoder, weights):
         super(SegmentationModel, self).__init__()
 
         self.arc = smp.Unet(
-            encoder_name=settings.ENCODER,
-            encoder_weights=settings.WEIGHTS,
+            encoder_name=encoder,
+            encoder_weights=weights,
             in_channels=3,
             classes=1,
             activation=None,
